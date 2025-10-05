@@ -1,0 +1,421 @@
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local RbxAnalytics = game:GetService("RbxAnalyticsService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local API_BASE_URL = "https://v0-remix-of-roblox-executor-system.vercel.app"
+local HWID = tostring(RbxAnalytics:GetClientId())
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HwidKeyTester"
+screenGui.Parent = playerGui
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 400, 0, 500)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 12)
+mainCorner.Parent = mainFrame
+
+local shadow = Instance.new("Frame")
+shadow.Name = "Shadow"
+shadow.Size = UDim2.new(1, 6, 1, 6)
+shadow.Position = UDim2.new(0, -3, 0, -3)
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.8
+shadow.ZIndex = 0
+shadow.Parent = mainFrame
+
+local shadowCorner = Instance.new("UICorner")
+shadowCorner.CornerRadius = UDim.new(0, 12)
+shadowCorner.Parent = shadow
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundColor3 = Color3.fromRGB(70, 130, 255)
+titleLabel.BorderSizePixel = 0
+titleLabel.Text = "HWID Key System Tester"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 20
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleLabel
+
+local hwidFrame = Instance.new("Frame")
+hwidFrame.Name = "HwidFrame"
+hwidFrame.Size = UDim2.new(1, -20, 0, 80)
+hwidFrame.Position = UDim2.new(0, 10, 0, 60)
+hwidFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+hwidFrame.BorderSizePixel = 0
+hwidFrame.Parent = mainFrame
+
+local hwidCorner = Instance.new("UICorner")
+hwidCorner.CornerRadius = UDim.new(0, 8)
+hwidCorner.Parent = hwidFrame
+
+local hwidLabel = Instance.new("TextLabel")
+hwidLabel.Name = "HwidLabel"
+hwidLabel.Size = UDim2.new(1, -10, 0, 25)
+hwidLabel.Position = UDim2.new(0, 5, 0, 5)
+hwidLabel.BackgroundTransparency = 1
+hwidLabel.Text = "Your Hardware ID:"
+hwidLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+hwidLabel.TextSize = 14
+hwidLabel.Font = Enum.Font.Gotham
+hwidLabel.TextXAlignment = Enum.TextXAlignment.Left
+hwidLabel.Parent = hwidFrame
+
+local hwidValue = Instance.new("TextLabel")
+hwidValue.Name = "HwidValue"
+hwidValue.Size = UDim2.new(1, -10, 0, 45)
+hwidValue.Position = UDim2.new(0, 5, 0, 30)
+hwidValue.BackgroundTransparency = 1
+hwidValue.Text = HWID
+hwidValue.TextColor3 = Color3.fromRGB(100, 255, 100)
+hwidValue.TextSize = 12
+hwidValue.Font = Enum.Font.Code
+hwidValue.TextXAlignment = Enum.TextXAlignment.Left
+hwidValue.TextWrapped = true
+hwidValue.Parent = hwidFrame
+
+local keyInputFrame = Instance.new("Frame")
+keyInputFrame.Name = "KeyInputFrame"
+keyInputFrame.Size = UDim2.new(1, -20, 0, 100)
+keyInputFrame.Position = UDim2.new(0, 10, 0, 150)
+keyInputFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+keyInputFrame.BorderSizePixel = 0
+keyInputFrame.Parent = mainFrame
+
+local keyInputCorner = Instance.new("UICorner")
+keyInputCorner.CornerRadius = UDim.new(0, 8)
+keyInputCorner.Parent = keyInputFrame
+
+local keyInputLabel = Instance.new("TextLabel")
+keyInputLabel.Name = "KeyInputLabel"
+keyInputLabel.Size = UDim2.new(1, -10, 0, 25)
+keyInputLabel.Position = UDim2.new(0, 5, 0, 5)
+keyInputLabel.BackgroundTransparency = 1
+keyInputLabel.Text = "Enter HWID Key:"
+keyInputLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+keyInputLabel.TextSize = 14
+keyInputLabel.Font = Enum.Font.Gotham
+keyInputLabel.TextXAlignment = Enum.TextXAlignment.Left
+keyInputLabel.Parent = keyInputFrame
+
+local keyTextBox = Instance.new("TextBox")
+keyTextBox.Name = "KeyTextBox"
+keyTextBox.Size = UDim2.new(1, -20, 0, 35)
+keyTextBox.Position = UDim2.new(0, 10, 0, 35)
+keyTextBox.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+keyTextBox.BorderSizePixel = 0
+keyTextBox.Text = ""
+keyTextBox.PlaceholderText = "Paste your HWID key here..."
+keyTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+keyTextBox.TextSize = 12
+keyTextBox.Font = Enum.Font.Code
+keyTextBox.ClearTextOnFocus = false
+keyTextBox.Parent = keyInputFrame
+
+local keyTextBoxCorner = Instance.new("UICorner")
+keyTextBoxCorner.CornerRadius = UDim.new(0, 6)
+keyTextBoxCorner.Parent = keyTextBox
+
+local buttonsFrame = Instance.new("Frame")
+buttonsFrame.Name = "ButtonsFrame"
+buttonsFrame.Size = UDim2.new(1, -20, 0, 60)
+buttonsFrame.Position = UDim2.new(0, 10, 0, 260)
+buttonsFrame.BackgroundTransparency = 1
+buttonsFrame.Parent = mainFrame
+
+local checkStatusButton = Instance.new("TextButton")
+checkStatusButton.Name = "CheckStatusButton"
+checkStatusButton.Size = UDim2.new(0.48, 0, 1, 0)
+checkStatusButton.Position = UDim2.new(0, 0, 0, 0)
+checkStatusButton.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
+checkStatusButton.BorderSizePixel = 0
+checkStatusButton.Text = "Check Status"
+checkStatusButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+checkStatusButton.TextSize = 16
+checkStatusButton.Font = Enum.Font.GothamBold
+checkStatusButton.Parent = buttonsFrame
+
+local checkStatusCorner = Instance.new("UICorner")
+checkStatusCorner.CornerRadius = UDim.new(0, 8)
+checkStatusCorner.Parent = checkStatusButton
+
+local validateButton = Instance.new("TextButton")
+validateButton.Name = "ValidateButton"
+validateButton.Size = UDim2.new(0.48, 0, 1, 0)
+validateButton.Position = UDim2.new(0.52, 0, 0, 0)
+validateButton.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+validateButton.BorderSizePixel = 0
+validateButton.Text = "Validate Key"
+validateButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+validateButton.TextSize = 16
+validateButton.Font = Enum.Font.GothamBold
+validateButton.Parent = buttonsFrame
+
+local validateCorner = Instance.new("UICorner")
+validateCorner.CornerRadius = UDim.new(0, 8)
+validateCorner.Parent = validateButton
+
+local resultsFrame = Instance.new("ScrollingFrame")
+resultsFrame.Name = "ResultsFrame"
+resultsFrame.Size = UDim2.new(1, -20, 0, 150)
+resultsFrame.Position = UDim2.new(0, 10, 0, 330)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+resultsFrame.BorderSizePixel = 0
+resultsFrame.ScrollBarThickness = 6
+resultsFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+resultsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+resultsFrame.Parent = mainFrame
+
+local resultsCorner = Instance.new("UICorner")
+resultsCorner.CornerRadius = UDim.new(0, 8)
+resultsCorner.Parent = resultsFrame
+
+local resultsLabel = Instance.new("TextLabel")
+resultsLabel.Name = "ResultsLabel"
+resultsLabel.Size = UDim2.new(1, -10, 1, 0)
+resultsLabel.Position = UDim2.new(0, 5, 0, 0)
+resultsLabel.BackgroundTransparency = 1
+resultsLabel.Text = "Results will appear here..."
+resultsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+resultsLabel.TextSize = 14
+resultsLabel.Font = Enum.Font.Code
+resultsLabel.TextXAlignment = Enum.TextXAlignment.Left
+resultsLabel.TextYAlignment = Enum.TextYAlignment.Top
+resultsLabel.TextWrapped = true
+resultsLabel.Parent = resultsFrame
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+closeButton.BorderSizePixel = 0
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextSize = 24
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Parent = mainFrame
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 15)
+closeCorner.Parent = closeButton
+
+local hintsLabel = Instance.new("TextLabel")
+hintsLabel.Name = "HintsLabel"
+hintsLabel.Size = UDim2.new(1, -20, 0, 20)
+hintsLabel.Position = UDim2.new(0, 10, 1, -25)
+hintsLabel.BackgroundTransparency = 1
+hintsLabel.Text = "Shortcuts: F1 = Check Status | F2 = Validate | ESC = Close"
+hintsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+hintsLabel.TextSize = 12
+hintsLabel.Font = Enum.Font.Gotham
+hintsLabel.Parent = mainFrame
+
+local function updateResults(text, color)
+    color = color or Color3.fromRGB(200, 200, 200)
+    local timestamp = os.date("[%H:%M:%S] ")
+    local newText = timestamp .. text .. "\n" .. resultsLabel.Text
+    resultsLabel.Text = newText
+    resultsLabel.TextColor3 = color
+    
+    local textSize = game:GetService("TextService"):GetTextSize(
+        resultsLabel.Text,
+        resultsLabel.TextSize,
+        resultsLabel.Font,
+        Vector2.new(resultsFrame.AbsoluteSize.X - 10, math.huge)
+    )
+    resultsLabel.Size = UDim2.new(1, -10, 0, math.max(textSize.Y, resultsFrame.AbsoluteSize.Y))
+    resultsFrame.CanvasSize = UDim2.new(0, 0, 0, textSize.Y + 10)
+    resultsFrame.CanvasPosition = Vector2.new(0, 0)
+end
+
+local function animateButton(button)
+    local originalSize = button.Size
+    local tween = TweenService:Create(
+        button,
+        TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = UDim2.new(originalSize.X.Scale * 0.95, originalSize.X.Offset * 0.95, originalSize.Y.Scale * 0.95, originalSize.Y.Offset * 0.95)}
+    )
+    tween:Play()
+    
+    tween.Completed:Connect(function()
+        local tween2 = TweenService:Create(
+            button,
+            TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Size = originalSize}
+        )
+        tween2:Play()
+    end)
+end
+
+local function checkHwidKeyStatus()
+    updateResults("Checking HWID key status...", Color3.fromRGB(255, 255, 100))
+    
+    local url = API_BASE_URL .. "/api/check-hwid-key-status?hwid=" .. HttpService:UrlEncode(HWID)
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+    
+    if success then
+        local decodeSuccess, data = pcall(function()
+            return HttpService:JSONDecode(response)
+        end)
+        
+        if decodeSuccess and data.success then
+            if data.has_key then
+                updateResults("✅ Active HWID key found!", Color3.fromRGB(100, 255, 100))
+                updateResults("Key: " .. tostring(data.key), Color3.fromRGB(150, 150, 255))
+                updateResults("Username: " .. tostring(data.username or "N/A"), Color3.fromRGB(200, 200, 200))
+                updateResults("Expires: " .. tostring(data.expires_at), Color3.fromRGB(200, 200, 200))
+                updateResults("Global Timer Dependent: " .. tostring(data.is_global_timer_dependent), Color3.fromRGB(200, 200, 200))
+                keyTextBox.Text = tostring(data.key)
+            else
+                updateResults("❌ No active HWID key found", Color3.fromRGB(255, 100, 100))
+                updateResults("Message: " .. tostring(data.message or "Unknown"), Color3.fromRGB(200, 200, 200))
+            end
+        else
+            updateResults("❌ Status check failed: " .. tostring(data and data.message or "Unknown error"), Color3.fromRGB(255, 100, 100))
+        end
+    else
+        updateResults("❌ HTTP Error: " .. tostring(response), Color3.fromRGB(255, 100, 100))
+        updateResults("Make sure HTTP requests are enabled and the domain is correct", Color3.fromRGB(255, 200, 100))
+    end
+end
+
+local function validateHwidKey()
+    local key = keyTextBox.Text:gsub("%s+", "")
+    
+    if key == "" then
+        updateResults("❌ Please enter a key first", Color3.fromRGB(255, 100, 100))
+        return
+    end
+    
+    updateResults("Validating HWID key: " .. key:sub(1, 10) .. "...", Color3.fromRGB(255, 255, 100))
+    
+    local url = API_BASE_URL .. "/api/roblox-validate-hwid?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(HWID)
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+    
+    if success then
+        local decodeSuccess, data = pcall(function()
+            return HttpService:JSONDecode(response)
+        end)
+        
+        if decodeSuccess and data.success then
+            updateResults("✅ Key validation successful!", Color3.fromRGB(100, 255, 100))
+            updateResults("Username: " .. tostring(data.username or "N/A"), Color3.fromRGB(200, 200, 200))
+            updateResults("Expires: " .. tostring(data.expires_at), Color3.fromRGB(200, 200, 200))
+            updateResults("Key Type: " .. tostring(data.key_type), Color3.fromRGB(200, 200, 200))
+            updateResults("Bound to Device: " .. tostring(data.bound_to_device), Color3.fromRGB(200, 200, 200))
+            updateResults("Global Timer Dependent: " .. tostring(data.is_global_timer_dependent), Color3.fromRGB(200, 200, 200))
+            
+            if not data.bound_to_device then
+                updateResults("🔗 Key is now bound to your device!", Color3.fromRGB(100, 255, 255))
+            end
+        else
+            updateResults("❌ Key validation failed: " .. tostring(data and data.message or "Unknown error"), Color3.fromRGB(255, 100, 100))
+            
+            if data and data.message then
+                if data.message:find("bound to a different device") then
+                    updateResults("💡 This key is already bound to another device", Color3.fromRGB(255, 200, 100))
+                elseif data.message:find("Invalid HWID key") then
+                    updateResults("💡 Key not found or not an HWID key", Color3.fromRGB(255, 200, 100))
+                elseif data.message:find("inactive") then
+                    updateResults("💡 Key has expired or been deactivated", Color3.fromRGB(255, 200, 100))
+                end
+            end
+        end
+    else
+        updateResults("❌ HTTP Error: " .. tostring(response), Color3.fromRGB(255, 100, 100))
+        updateResults("Make sure HTTP requests are enabled and the domain is correct", Color3.fromRGB(255, 200, 100))
+    end
+end
+
+checkStatusButton.MouseButton1Click:Connect(function()
+    animateButton(checkStatusButton)
+    checkHwidKeyStatus()
+end)
+
+validateButton.MouseButton1Click:Connect(function()
+    animateButton(validateButton)
+    validateHwidKey()
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+    animateButton(closeButton)
+    screenGui:Destroy()
+end)
+
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+titleLabel.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleLabel.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.F1 then
+        checkHwidKeyStatus()
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        validateHwidKey()
+    elseif input.KeyCode == Enum.KeyCode.Escape then
+        screenGui:Destroy()
+    end
+end)
+
+wait(0.5)
+updateResults("🚀 HWID Key Tester loaded successfully!", Color3.fromRGB(100, 255, 100))
+updateResults("Hardware ID: " .. HWID, Color3.fromRGB(150, 150, 255))
+updateResults("Domain: " .. API_BASE_URL, Color3.fromRGB(200, 200, 200))
+updateResults("Click 'Check Status' to see if you have an active key", Color3.fromRGB(255, 255, 100))
+
+print("HWID Key Tester GUI loaded! Hardware ID: " .. HWID)
