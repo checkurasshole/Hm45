@@ -1,0 +1,582 @@
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+local rolesRemote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+
+local currentRoles = {}
+local murdererPlayer, sheriffPlayer, heroPlayer
+
+local function notify(txt)
+    pcall(function()
+        Library:Notify({
+            Title = "combo_wick",
+            Description = txt,
+            Time = 4
+        })
+    end)
+end
+
+local function getCharacter(plr)
+    plr = plr or LocalPlayer
+    if not plr then return end
+    local char = plr.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        return char
+    end
+end
+
+local function getAliveRoles()
+    if not rolesRemote or not rolesRemote.InvokeServer then return end
+    local ok, result = pcall(function()
+        return rolesRemote:InvokeServer()
+    end)
+    if not ok or type(result) ~= "table" then return end
+    currentRoles = result
+    murdererPlayer, sheriffPlayer, heroPlayer = nil, nil, nil
+    for name, data in pairs(result) do
+        local plr = Players:FindFirstChild(name)
+        if plr and data and not data.Killed and not data.Dead then
+            if data.Role == "Murderer" then
+                murdererPlayer = plr
+            elseif data.Role == "Sheriff" then
+                sheriffPlayer = plr
+            elseif data.Role == "Hero" then
+                heroPlayer = plr
+            end
+        end
+    end
+end
+
+local function getRoleForPlayer(plr)
+    if not currentRoles then return "Innocent" end
+    local data = currentRoles[plr.Name]
+    if not data then return "Innocent" end
+    return data.Role or "Innocent"
+end
+
+local espEnabled = false
+local roleESPEnabled = false
+local playerESPEnabled = false
+local gunESPEnabled = false
+
+local roleColors = {
+    Murderer = Color3.fromRGB(255, 0, 0),
+    Sheriff  = Color3.fromRGB(0, 0, 255),
+    Hero     = Color3.fromRGB(0, 255, 0),
+    Innocent = Color3.fromRGB(255, 255, 255)
+}
+
+local function ensureHighlight(instance)
+    if not instance then return end
+    local hl = instance:FindFirstChildOfClass("Highlight")
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.OutlineTransparency = 0.3
+        hl.Parent = instance
+    end
+    return hl
+end
+
+local function clearAllHighlights()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character then
+            local hl = plr.Character:FindFirstChildOfClass("Highlight")
+            if hl then hl:Destroy() end
+        end
+    end
+    local normal = Workspace:FindFirstChild("Normal")
+    if normal then
+        for _, v in ipairs(normal:GetChildren()) do
+            local hl = v:FindFirstChildOfClass("Highlight")
+            if hl then hl:Destroy() end
+        end
+    end
+end
+
+local function updatePlayerHighlights()
+    if not espEnabled then
+        clearAllHighlights()
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hl = ensureHighlight(plr.Character)
+            if roleESPEnabled then
+                local role = getRoleForPlayer(plr)
+                hl.FillColor = roleColors[role] or roleColors.Innocent
+                hl.FillTransparency = 0.6
+                hl.OutlineTransparency = 0.1
+            elseif playerESPEnabled then
+                hl.FillColor = Color3.fromRGB(255, 255, 0)
+                hl.FillTransparency = 0.8
+                hl.OutlineTransparency = 0.1
+            end
+            hl.Enabled = roleESPEnabled or playerESPEnabled
+        end
+    end
+end
+
+local gunESPLoopRunning = false
+
+local function gunESPLoop()
+    while gunESPEnabled do
+        local normal = Workspace:FindFirstChild("Normal")
+        if normal then
+            for _, obj in ipairs(normal:GetDescendants()) do
+                if obj:IsA("BasePart") and obj.Name == "GunDrop" then
+                    local hl = ensureHighlight(obj)
+                    hl.FillColor = Color3.fromRGB(80, 0, 255)
+                    hl.FillTransparency = 0.4
+                    hl.OutlineTransparency = 0
+                    hl.Enabled = true
+                end
+            end
+        end
+        task.wait(0.3)
+    end
+    local normal = Workspace:FindFirstChild("Normal")
+    if normal then
+        for _, obj in ipairs(normal:GetChildren()) do
+            if obj.Name == "GunDrop" then
+                local hl = obj:FindFirstChildOfClass("Highlight")
+                if hl then hl:Destroy() end
+            end
+        end
+    end
+    gunESPLoopRunning = false
+end
+
+local function setGunESP(state)
+    gunESPEnabled = state
+    if state and not gunESPLoopRunning then
+        gunESPLoopRunning = true
+        task.spawn(gunESPLoop)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if espEnabled then
+        getAliveRoles()
+        updatePlayerHighlights()
+    end
+end)
+
+local spawnPoints = {
+    Workspace.RegularLobby.Spawns:GetChildren()[11],
+    Workspace.RegularLobby.Spawns,
+    Workspace
+}
+
+local function teleportToSpawn()
+    local char = getCharacter(LocalPlayer)
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local spawn = spawnPoints[math.random(1, #spawnPoints)]
+    if spawn:IsA("BasePart") then
+        root.CFrame = spawn.CFrame + Vector3.new(0, 5, 0)
+    elseif spawn:IsA("Model") then
+        local parts = spawn:GetDescendants()
+        for _, p in ipairs(parts) do
+            if p:IsA("BasePart") then
+                root.CFrame = p.CFrame + Vector3.new(0, 5, 0)
+                break
+            end
+        end
+    end
+end
+
+local function tpToPlayer(plr)
+    local char = getCharacter(LocalPlayer)
+    local targetChar = getCharacter(plr)
+    if char and targetChar then
+        char.HumanoidRootPart.CFrame = targetChar.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+    end
+end
+
+local function tpToGun()
+    local char = getCharacter(LocalPlayer)
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local gunPart
+    local normal = Workspace:FindFirstChild("Normal")
+    if normal then
+        for _, obj in ipairs(normal:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "GunDrop" then
+                gunPart = obj
+                break
+            end
+        end
+    end
+    if not gunPart then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "GunDrop" then
+                gunPart = obj
+                break
+            end
+        end
+    end
+    if gunPart then
+        hrp.CFrame = gunPart.CFrame + Vector3.new(0, 3, 0)
+    end
+end
+
+local function tpToRandomPlayer()
+    local others = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(others, plr)
+        end
+    end
+    if #others == 0 then return end
+    local target = others[math.random(1, #others)]
+    tpToPlayer(target)
+end
+
+local noclipEnabled = false
+local infJumpEnabled = false
+
+local function setWalkSpeed(v)
+    local char = getCharacter(LocalPlayer)
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").WalkSpeed = v
+    end
+end
+
+local function setJumpPower(v)
+    local char = getCharacter(LocalPlayer)
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").JumpPower = v
+    end
+end
+
+RunService.Stepped:Connect(function()
+    if noclipEnabled then
+        local char = getCharacter(LocalPlayer)
+        if char then
+            for _, part in ipairs(char:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+UIS.JumpRequest:Connect(function()
+    if infJumpEnabled then
+        local char = getCharacter(LocalPlayer)
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+local lastServer = nil
+local coinLooping = false
+local avoidMurdererRadius = 35
+
+local teleportPattern = {1.5, 0.8, 1, 1, 1.5}
+local patternIndex = 1
+
+local function getPatternCooldown()
+    local v = teleportPattern[patternIndex]
+    patternIndex = patternIndex + 1
+    if patternIndex > #teleportPattern then
+        patternIndex = 1
+    end
+    return v
+end
+
+local function getCoinServers()
+    local servers = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj.Name == "Coin_Server" and obj:IsA("BasePart") then
+            table.insert(servers, obj)
+        end
+    end
+    return servers
+end
+
+local function isNearMurderer(pos)
+    if not murdererPlayer then return false end
+    local char = getCharacter(murdererPlayer)
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local dist = (pos - hrp.Position).Magnitude
+    return dist <= avoidMurdererRadius
+end
+
+local function walkToNearbyCoins(radius)
+    local char = getCharacter(LocalPlayer)
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local normal = Workspace:FindFirstChild("Normal")
+    if not normal then return end
+
+    local coins = {}
+    for _, obj in ipairs(normal:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name == "Coin" then
+            local dist = (obj.Position - hrp.Position).Magnitude
+            if dist <= radius then
+                table.insert(coins, obj)
+            end
+        end
+    end
+
+    table.sort(coins, function(a, b)
+        return (a.Position - hrp.Position).Magnitude < (b.Position - hrp.Position).Magnitude
+    end)
+
+    for _, coin in ipairs(coins) do
+        char:MoveTo(coin.Position)
+        char:WaitForChild("Humanoid").MoveToFinished:Wait(0.4)
+    end
+end
+
+local function teleportToCoinServer()
+    local char = getCharacter(LocalPlayer)
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    getAliveRoles()
+
+    local servers = getCoinServers()
+    if #servers == 0 then
+        return
+    end
+
+    if lastServer and #servers > 1 then
+        for i = #servers, 1, -1 do
+            if servers[i] == lastServer then
+                table.remove(servers, i)
+            end
+        end
+    end
+
+    local safe = {}
+    for _, s in ipairs(servers) do
+        if not isNearMurderer(s.Position) then
+            table.insert(safe, s)
+        end
+    end
+
+    local list = #safe > 0 and safe or servers
+    local targetServer = list[math.random(1, #list)]
+
+    root.CFrame = targetServer.CFrame + Vector3.new(0, 5, 0)
+    lastServer = targetServer
+
+    walkToNearbyCoins(5)
+end
+
+local function teleportRoutine()
+    teleportToSpawn()
+    task.wait(getPatternCooldown())
+    teleportToCoinServer()
+end
+
+local function startCoinLoop()
+    if coinLooping then return end
+
+    local servers = getCoinServers()
+    if #servers == 0 then
+        notify("No Coin_Server found. Get Coins/Money will wait.")
+        return
+    end
+
+    coinLooping = true
+    task.spawn(function()
+        while coinLooping do
+            teleportRoutine()
+            task.wait(getPatternCooldown())
+        end
+    end)
+end
+
+local function stopCoinLoop()
+    coinLooping = false
+end
+
+local Window = Library:CreateWindow({
+    Title = "combo_wick",
+    Footer = "MM2",
+    Icon = 95816097006870,
+    Center = true,
+    AutoShow = true,
+    NotifySide = "Right",
+    Size = UDim2.new(0, 380, 0, 240)
+})
+
+local Tab = Window:AddTab("combo_wick")
+
+local Left = Tab:AddLeftGroupbox("Main")
+local Right = Tab:AddRightGroupbox("Utility")
+
+Right:AddToggle("CoinServerFarmToggle", {
+    Text = "Get Coins/Money",
+    Default = false,
+    Callback = function(state)
+        if state then
+            startCoinLoop()
+            if coinLooping then
+                notify("Get Coins/Money: ON")
+            end
+        else
+            stopCoinLoop()
+            notify("Get Coins/Money: OFF")
+        end
+    end
+})
+
+Left:AddToggle("RoleESP", {
+    Text = "Role ESP",
+    Default = false,
+    Callback = function(val)
+        roleESPEnabled = val
+        espEnabled = val or playerESPEnabled or gunESPEnabled
+        if val then
+            getAliveRoles()
+        end
+        updatePlayerHighlights()
+    end
+})
+
+Left:AddToggle("PlayerESP", {
+    Text = "Player ESP",
+    Default = false,
+    Callback = function(val)
+        playerESPEnabled = val
+        espEnabled = val or roleESPEnabled or gunESPEnabled
+        updatePlayerHighlights()
+    end
+})
+
+Left:AddToggle("GunESP", {
+    Text = "Gun ESP",
+    Default = false,
+    Callback = function(val)
+        setGunESP(val)
+        espEnabled = val or roleESPEnabled or playerESPEnabled
+    end
+})
+
+Left:AddButton({
+    Text = "Detect Roles (notify)",
+    Func = function()
+        getAliveRoles()
+        local msg = ""
+        if murdererPlayer then msg ..= "Murderer: " .. murdererPlayer.Name .. "  " end
+        if sheriffPlayer then msg ..= "Sheriff: " .. sheriffPlayer.Name .. "  " end
+        if heroPlayer then msg ..= "Hero: " .. heroPlayer.Name .. "  " end
+        if msg == "" then msg = "No roles found yet." end
+        notify(msg)
+    end
+})
+
+Left:AddButton("TP to Murderer", function()
+    getAliveRoles()
+    if murdererPlayer then tpToPlayer(murdererPlayer) else notify("Murderer not found.") end
+end)
+
+Left:AddButton("TP to Sheriff", function()
+    getAliveRoles()
+    if sheriffPlayer then tpToPlayer(sheriffPlayer) else notify("Sheriff not found.") end
+end)
+
+Left:AddButton("TP to Gun", function()
+    tpToGun()
+end)
+
+Right:AddSlider("WalkSpeedSlider", {
+    Text = "WalkSpeed",
+    Default = 16,
+    Min = 16,
+    Max = 80,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(v)
+        setWalkSpeed(v)
+    end
+})
+
+Right:AddSlider("JumpPowerSlider", {
+    Text = "JumpPower",
+    Default = 50,
+    Min = 50,
+    Max = 120,
+    Rounding = 0,
+    Callback = function(v)
+        setJumpPower(v)
+    end
+})
+
+Right:AddToggle("NoclipToggle", {
+    Text = "Noclip",
+    Default = false,
+    Callback = function(v)
+        noclipEnabled = v
+    end
+})
+
+Right:AddToggle("InfJumpToggle", {
+    Text = "Infinite Jump",
+    Default = false,
+    Callback = function(v)
+        infJumpEnabled = v
+    end
+})
+
+Right:AddButton("TP Spawn (Random)", function()
+    teleportToSpawn()
+end)
+
+Right:AddButton("TP Random Player", function()
+    tpToRandomPlayer()
+end)
+
+Right:AddButton("Reset Character", function()
+    if LocalPlayer.Character then
+        LocalPlayer.Character:BreakJoints()
+    end
+end)
+
+local Settings = Window:AddTab("Settings")
+local SettingsBox = Settings:AddLeftGroupbox("combo_wick")
+
+SettingsBox:AddButton("Unload GUI", function()
+    stopCoinLoop()
+    gunESPEnabled = false
+    espEnabled = false
+    roleESPEnabled = false
+    playerESPEnabled = false
+    clearAllHighlights()
+    Library:Unload()
+end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+ThemeManager:SetFolder("combo_wick")
+SaveManager:SetFolder("combo_wick")
+SaveManager:BuildConfigSection(Settings)
+ThemeManager:ApplyToTab(Settings)
