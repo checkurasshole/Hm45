@@ -49,6 +49,16 @@ local pathElements = {}
 local trackedObjects = {}
 local childMonitors = {}
 
+local numericProperties = {
+    "Transparency", "BackgroundTransparency", "TextTransparency",
+    "Rotation", "ZIndex", "LayoutOrder",
+    "TextSize", "LineHeight", "MaxVisibleGraphemes"
+}
+
+local function isNumeric(value)
+    return type(value) == "number" or (type(value) == "string" and tonumber(value) ~= nil)
+end
+
 local function getFullPath(instance)
     local parts = {}
     local current = instance
@@ -80,8 +90,15 @@ local function getChildData(child)
     
     if child:IsA("GuiObject") then
         data.properties["Visible"] = child.Visible
-        data.properties["Position"] = tostring(child.Position)
-        data.properties["Size"] = tostring(child.Size)
+        
+        for _, propName in ipairs(numericProperties) do
+            local success, value = pcall(function()
+                return child[propName]
+            end)
+            if success and type(value) == "number" then
+                data.properties[propName] = value
+            end
+        end
     end
     
     if child:IsA("ImageLabel") or child:IsA("ImageButton") then
@@ -197,9 +214,14 @@ local function createChildEntry(parent, childData, parentPath)
         
         if child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
             child:GetPropertyChangedSignal("Text"):Connect(function()
-                if child.Text ~= childData.properties["Text"] then
-                    childData.properties["Text"] = child.Text
-                    updateChildDisplay(childFrame, childData, {properties = {Text = child.Text}})
+                local newText = child.Text
+                if newText ~= childData.properties["Text"] then
+                    childData.properties["Text"] = newText
+                    local updates = {Text = newText}
+                    if isNumeric(newText) then
+                        updates.Text = updates.Text .. " (NUMBER)"
+                    end
+                    updateChildDisplay(childFrame, childData, {properties = updates})
                     childFrame.BackgroundColor3 = Color3.fromRGB(70, 100, 70)
                     task.wait(1)
                     childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
@@ -217,6 +239,21 @@ local function createChildEntry(parent, childData, parentPath)
                     childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
                 end
             end)
+            
+            for _, propName in ipairs(numericProperties) do
+                local success = pcall(function()
+                    child:GetPropertyChangedSignal(propName):Connect(function()
+                        local newValue = child[propName]
+                        if type(newValue) == "number" and newValue ~= childData.properties[propName] then
+                            childData.properties[propName] = newValue
+                            updateChildDisplay(childFrame, childData, {properties = {[propName] = newValue}})
+                            childFrame.BackgroundColor3 = Color3.fromRGB(100, 70, 100)
+                            task.wait(1)
+                            childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                        end
+                    end)
+                end)
+            end
         end
         
         if child:IsA("ImageLabel") or child:IsA("ImageButton") then
@@ -233,10 +270,15 @@ local function createChildEntry(parent, childData, parentPath)
         
         child.AttributeChanged:Connect(function(attrName)
             local attrValue = child:GetAttribute(attrName)
-            if tostring(attrValue) ~= childData.attributes[attrName] then
-                childData.attributes[attrName] = tostring(attrValue)
-                updateChildDisplay(childFrame, childData, {attributes = {[attrName] = attrValue}})
-                childFrame.BackgroundColor3 = Color3.fromRGB(70, 100, 70)
+            local strValue = tostring(attrValue)
+            if strValue ~= childData.attributes[attrName] then
+                childData.attributes[attrName] = strValue
+                local displayValue = strValue
+                if isNumeric(attrValue) then
+                    displayValue = displayValue .. " (NUMBER)"
+                end
+                updateChildDisplay(childFrame, childData, {attributes = {[attrName] = displayValue}})
+                childFrame.BackgroundColor3 = Color3.fromRGB(100, 70, 100)
                 task.wait(1)
                 childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
             end
