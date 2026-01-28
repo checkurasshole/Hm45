@@ -78,20 +78,6 @@ local function getAllChildren(instance)
     return children
 end
 
-local function safeSetClipboard(text)
-    local success, err = pcall(function()
-        if setclipboard then
-            setclipboard(text)
-            return true
-        elseif toclipboard then
-            toclipboard(text)
-            return true
-        end
-        return false
-    end)
-    return success
-end
-
 local function createChildEntry(parent, childData)
     local childFrame = Instance.new("Frame")
     childFrame.Size = UDim2.new(1, -8, 0, 50)
@@ -132,13 +118,9 @@ local function createChildEntry(parent, childData)
     btnCorner.Parent = copyBtn
     
     copyBtn.MouseButton1Click:Connect(function()
-        if safeSetClipboard(childData.path) then
-            copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
-            copyBtn.Text = "Copied!"
-        else
-            copyBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-            copyBtn.Text = "Failed"
-        end
+        setclipboard(childData.path)
+        copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+        copyBtn.Text = "Copied!"
         task.wait(0.6)
         copyBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 190)
         copyBtn.Text = "Copy"
@@ -227,7 +209,7 @@ local function addPathToGui(path, instance)
     copyAllButton.Size = UDim2.new(1, 0, 0, 24)
     copyAllButton.BackgroundColor3 = Color3.fromRGB(100, 180, 100)
     copyAllButton.BorderSizePixel = 0
-    copyAllButton.Text = "Copy All Children"
+    copyAllButton.Text = "Copy All Children Paths"
     copyAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     copyAllButton.Font = Enum.Font.GothamBold
     copyAllButton.TextSize = 10
@@ -264,13 +246,9 @@ local function addPathToGui(path, instance)
     end)
     
     copyButton.MouseButton1Click:Connect(function()
-        if safeSetClipboard(path) then
-            copyButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
-            copyButton.Text = "Copied!"
-        else
-            copyButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-            copyButton.Text = "Failed"
-        end
+        setclipboard(path)
+        copyButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+        copyButton.Text = "Copied!"
         task.wait(0.8)
         copyButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
         copyButton.Text = "Copy"
@@ -281,19 +259,12 @@ local function addPathToGui(path, instance)
         for _, childData in ipairs(children) do
             table.insert(allPaths, childData.path)
         end
-        
-        local finalText = table.concat(allPaths, "\n")
-        
-        if safeSetClipboard(finalText) then
-            copyAllButton.BackgroundColor3 = Color3.fromRGB(70, 220, 70)
-            copyAllButton.Text = "Copied!"
-        else
-            copyAllButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-            copyAllButton.Text = "Failed"
-        end
-        task.wait(1)
+        setclipboard(table.concat(allPaths, "\n"))
+        copyAllButton.BackgroundColor3 = Color3.fromRGB(70, 220, 70)
+        copyAllButton.Text = "All Copied!"
+        task.wait(0.8)
         copyAllButton.BackgroundColor3 = Color3.fromRGB(100, 180, 100)
-        copyAllButton.Text = "Copy All Children"
+        copyAllButton.Text = "Copy All Children Paths"
     end)
     
     pathElements[path] = pathFrame
@@ -340,9 +311,11 @@ local function scanInstance(instance)
     end
 end
 
-scanInstance(game)
+local targetPath = player.PlayerGui:WaitForChild("MainGUI"):WaitForChild("Lobby"):WaitForChild("Dock"):WaitForChild("CoinBags"):WaitForChild("Container"):WaitForChild("Coin")
 
-game.DescendantAdded:Connect(function(descendant)
+scanInstance(targetPath)
+
+targetPath.DescendantAdded:Connect(function(descendant)
     task.wait()
     monitorVisibility(descendant)
 end)
