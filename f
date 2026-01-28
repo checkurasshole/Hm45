@@ -8,58 +8,76 @@ local function copyToClipboard(text)
 	elseif toclipboard then
 		toclipboard(text)
 	else
-		warn("❌ Executor does not support clipboard.")
+		warn("❌ No clipboard support.")
 	end
 end
 
--- GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "LIVE_UI_CHANGE_FINDER"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player.PlayerGui
+-- GUI (SMALL + DRAGGABLE)
+local screenGui = Instance.new("ScreenGui", player.PlayerGui)
+screenGui.Name = "COIN_SOURCE_FINDER"
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 450, 0, 300)
-frame.Position = UDim2.new(0.5, -225, 0.5, -150)
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 320, 0, 180)
+frame.Position = UDim2.new(0, 20, 0, 120)
 frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 frame.BorderSizePixel = 0
-frame.Parent = screenGui
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 30)
 title.BackgroundTransparency = 1
-title.Text = "LIVE UI CHANGE FINDER (ONLY UPDATING TEXT)"
+title.Text = "COIN CHANGE DETECTOR"
 title.TextColor3 = Color3.new(1,1,1)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
-title.Parent = frame
 
-local list = Instance.new("ScrollingFrame")
-list.Size = UDim2.new(1, -10, 1, -50)
-list.Position = UDim2.new(0, 5, 0, 45)
+local list = Instance.new("ScrollingFrame", frame)
+list.Position = UDim2.new(0, 5, 0, 35)
+list.Size = UDim2.new(1, -10, 1, -40)
 list.CanvasSize = UDim2.new(0,0,0,0)
-list.ScrollBarImageTransparency = 0.2
-list.Parent = frame
+list.ScrollBarImageTransparency = 0.3
 
-local layout = Instance.new("UIListLayout")
+local layout = Instance.new("UIListLayout", list)
 layout.Padding = UDim.new(0, 6)
-layout.Parent = list
+
+-- Drag
+local dragging, dragStart, startPos
+title.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+	end
+end)
+title.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = false
+	end
+end)
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end)
 
 local function makePath(obj)
 	local path = obj.Name
-	local parent = obj.Parent
-	while parent and parent ~= game do
-		path = parent.Name .. "." .. path
-		parent = parent.Parent
+	local p = obj.Parent
+	while p and p ~= game do
+		path = p.Name .. "." .. path
+		p = p.Parent
 	end
 	return path
 end
 
-local tracked = {}
-
-local function addEntry(obj, oldText, newText)
+local function addEntry(obj, old, new)
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -10, 0, 45)
+	btn.Size = UDim2.new(1, -10, 0, 38)
 	btn.BackgroundColor3 = Color3.fromRGB(35,35,35)
 	btn.BorderSizePixel = 0
 	btn.TextColor3 = Color3.new(1,1,1)
@@ -67,36 +85,64 @@ local function addEntry(obj, oldText, newText)
 	btn.Font = Enum.Font.Gotham
 	btn.TextWrapped = true
 
-	local fullPath = makePath(obj)
-	btn.Text = "UPDATED TEXT:\n"..oldText.." ➜ "..newText.."\nCLICK TO COPY PATH"
+	local path = makePath(obj)
+	btn.Text = tostring(obj.ClassName)..": "..tostring(old).." ➜ "..tostring(new).."\nTAP TO COPY"
 
 	btn.MouseButton1Click:Connect(function()
-		copyToClipboard(fullPath)
-		btn.Text = "✅ COPIED:\n"..fullPath
+		copyToClipboard(path)
+		btn.Text = "✅ COPIED:\n"..path
 	end)
 
 	btn.Parent = list
+	task.wait()
 	list.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 10)
 end
 
--- Watch for text changes
-for _, gui in ipairs(player.PlayerGui:GetDescendants()) do
-	if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-		tracked[gui] = gui.Text
-
-		gui:GetPropertyChangedSignal("Text"):Connect(function()
-			local old = tracked[gui]
-			local new = gui.Text
-			tracked[gui] = new
-
-			-- Only show real numeric changes
-			if old ~= new then
-				if tonumber((old or ""):gsub(",", "")) or tonumber((new or ""):gsub(",", "")) then
-					addEntry(gui, tostring(old), tostring(new))
+-- 1) Watch TEXT changes
+for _, d in ipairs(player.PlayerGui:GetDescendants()) do
+	if d:IsA("TextLabel") or d:IsA("TextButton") then
+		local last = d.Text
+		d:GetPropertyChangedSignal("Text"):Connect(function()
+			if d.Text ~= last then
+				if tonumber((d.Text or ""):gsub(",", "")) or tonumber((last or ""):gsub(",", "")) then
+					addEntry(d, last, d.Text)
 				end
+				last = d.Text
 			end
 		end)
 	end
 end
 
-print("[LIVE UI CHANGE FINDER] Watching for UI that updates (like coins).")
+-- 2) Watch NumberValue / IntValue (COMMON FOR MOBILE)
+for _, d in ipairs(player:GetDescendants()) do
+	if d:IsA("NumberValue") or d:IsA("IntValue") then
+		local last = d.Value
+		d.Changed:Connect(function()
+			if d.Value ~= last then
+				addEntry(d, last, d.Value)
+				last = d.Value
+			end
+		end)
+	end
+end
+
+-- 3) Watch Attributes (HIDDEN COIN STORAGE)
+local function watchAttributes(obj)
+	local lastAttrs = obj:GetAttributes()
+	obj.AttributeChanged:Connect(function(attr)
+		local new = obj:GetAttribute(attr)
+		local old = lastAttrs[attr]
+		if new ~= old then
+			if typeof(new) == "number" then
+				addEntry(obj, old, new)
+			end
+			lastAttrs[attr] = new
+		end
+	end)
+end
+
+for _, d in ipairs(player:GetDescendants()) do
+	watchAttributes(d)
+end
+
+print("[COIN SOURCE FINDER] Collect coins now. Real source WILL show.")
