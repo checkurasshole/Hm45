@@ -106,13 +106,26 @@ for _, obj in ipairs(trackedObjects) do
     objectLabels[obj] = label
 end
 
+-- Function to check if string is a number
+local function isNumber(str)
+    if tonumber(str) then
+        return true
+    else
+        return false
+    end
+end
+
 -- Update function
 local function updateLabels()
     for obj, label in pairs(objectLabels) do
         if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            local newText = obj.Text or ""
-            if label.Text ~= newText then
-                label.Text = newText
+            local text = obj.Text or ""
+            if isNumber(text) then
+                if label.Text ~= text then
+                    label.Text = text
+                end
+            else
+                label.Text = "" -- ignore non-numbers like "FULL"
             end
         end
     end
