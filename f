@@ -311,11 +311,9 @@ local function scanInstance(instance)
     end
 end
 
-local targetPath = player.PlayerGui:WaitForChild("MainGUI"):WaitForChild("Lobby"):WaitForChild("Dock"):WaitForChild("CoinBags"):WaitForChild("Container"):WaitForChild("Coin")
+scanInstance(game)
 
-scanInstance(targetPath)
-
-targetPath.DescendantAdded:Connect(function(descendant)
+game.DescendantAdded:Connect(function(descendant)
     task.wait()
     monitorVisibility(descendant)
 end)
