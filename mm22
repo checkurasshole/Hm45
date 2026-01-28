@@ -1,0 +1,255 @@
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local rolesRemote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+
+local currentRoles = {}
+local murdererPlayer, sheriffPlayer, heroPlayer
+
+local function notify(txt)
+    pcall(function()
+        Library:Notify({
+            Title = "combo_wick",
+            Description = txt,
+            Time = 4
+        })
+    end)
+end
+
+local function getAliveRoles()
+    if not rolesRemote or not rolesRemote.InvokeServer then return end
+    local ok, result = pcall(function()
+        return rolesRemote:InvokeServer()
+    end)
+    if not ok or type(result) ~= "table" then return end
+    currentRoles = result
+    murdererPlayer, sheriffPlayer, heroPlayer = nil, nil, nil
+    for name, data in pairs(result) do
+        local plr = Players:FindFirstChild(name)
+        if plr and data and not data.Killed and not data.Dead then
+            if data.Role == "Murderer" then
+                murdererPlayer = plr
+            elseif data.Role == "Sheriff" then
+                sheriffPlayer = plr
+            elseif data.Role == "Hero" then
+                heroPlayer = plr
+            end
+        end
+    end
+end
+
+local function getRoleForPlayer(plr)
+    if not currentRoles then return "Innocent" end
+    local data = currentRoles[plr.Name]
+    if not data then return "Innocent" end
+    return data.Role or "Innocent"
+end
+
+local roleESPEnabled = false
+
+local roleColors = {
+    Murderer = Color3.fromRGB(255, 0, 0),
+    Sheriff  = Color3.fromRGB(0, 0, 255),
+    Hero     = Color3.fromRGB(0, 255, 0),
+    Innocent = Color3.fromRGB(255, 255, 255)
+}
+
+local function ensureHighlight(instance)
+    if not instance then return end
+    local hl = instance:FindFirstChildOfClass("Highlight")
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.OutlineTransparency = 0.3
+        hl.Parent = instance
+    end
+    return hl
+end
+
+local function clearAllHighlights()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character then
+            local hl = plr.Character:FindFirstChildOfClass("Highlight")
+            if hl then hl:Destroy() end
+        end
+    end
+end
+
+local function getDistance(plr)
+    if not plr or plr == LocalPlayer then return nil end
+    local char = LocalPlayer.Character
+    local targetChar = plr.Character
+    if not char or not targetChar then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
+    if not hrp or not targetHrp then return nil end
+    return math.floor((hrp.Position - targetHrp.Position).Magnitude)
+end
+
+local function updatePlayerHighlights()
+    if not roleESPEnabled then
+        clearAllHighlights()
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hl = ensureHighlight(plr.Character)
+            local role = getRoleForPlayer(plr)
+            hl.FillColor = roleColors[role] or roleColors.Innocent
+            hl.FillTransparency = 0.6
+            hl.OutlineTransparency = 0.1
+            hl.Enabled = true
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if roleESPEnabled then
+        getAliveRoles()
+        updatePlayerHighlights()
+    end
+end)
+
+local distanceLabel
+
+local function createDistanceLabel()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "DistanceDisplay"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = game:GetService("CoreGui")
+    
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 250, 0, 80)
+    Frame.Position = UDim2.new(0, 10, 0.5, -40)
+    Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Frame.BackgroundTransparency = 0.3
+    Frame.BorderSizePixel = 0
+    Frame.Parent = ScreenGui
+    
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.Parent = Frame
+    
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.Size = UDim2.new(1, -20, 1, -20)
+    TextLabel.Position = UDim2.new(0, 10, 0, 10)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TextLabel.TextSize = 16
+    TextLabel.Font = Enum.Font.GothamBold
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.TextYAlignment = Enum.TextYAlignment.Top
+    TextLabel.Text = ""
+    TextLabel.Parent = Frame
+    
+    return TextLabel
+end
+
+local function updateDistanceDisplay()
+    if not distanceLabel then
+        distanceLabel = createDistanceLabel()
+    end
+    
+    if not roleESPEnabled then
+        distanceLabel.Text = ""
+        return
+    end
+    
+    getAliveRoles()
+    
+    local myRole = getRoleForPlayer(LocalPlayer)
+    local lines = {}
+    
+    -- Only show murderer distance if you're NOT the murderer
+    if murdererPlayer and myRole ~= "Murderer" then
+        local dist = getDistance(murdererPlayer)
+        if dist then
+            table.insert(lines, "🔴 Murderer: " .. dist .. " studs")
+        end
+    end
+    
+    -- Only show sheriff distance if you're NOT the sheriff
+    if sheriffPlayer and myRole ~= "Sheriff" then
+        local dist = getDistance(sheriffPlayer)
+        if dist then
+            table.insert(lines, "🔵 Sheriff: " .. dist .. " studs")
+        end
+    end
+    
+    distanceLabel.Text = table.concat(lines, "\n")
+end
+
+RunService.Heartbeat:Connect(function()
+    if roleESPEnabled then
+        updateDistanceDisplay()
+    end
+end)
+
+local Window = Library:CreateWindow({
+    Title = "combo_wick",
+    Footer = "MM2 Role ESP",
+    Icon = 95816097006870,
+    Center = true,
+    AutoShow = true,
+    NotifySide = "Right",
+    Size = UDim2.new(0, 380, 0, 240)
+})
+
+local Tab = Window:AddTab("Role ESP")
+local Main = Tab:AddLeftGroupbox("Main")
+
+Main:AddToggle("RoleESP", {
+    Text = "Role ESP",
+    Default = false,
+    Callback = function(val)
+        roleESPEnabled = val
+        if val then
+            getAliveRoles()
+            notify("Role ESP: ON")
+        else
+            notify("Role ESP: OFF")
+        end
+        updatePlayerHighlights()
+    end
+})
+
+Main:AddButton({
+    Text = "Detect Roles (notify)",
+    Func = function()
+        getAliveRoles()
+        local msg = ""
+        if murdererPlayer then msg ..= "Murderer: " .. murdererPlayer.Name .. "  " end
+        if sheriffPlayer then msg ..= "Sheriff: " .. sheriffPlayer.Name .. "  " end
+        if heroPlayer then msg ..= "Hero: " .. heroPlayer.Name .. "  " end
+        if msg == "" then msg = "No roles found yet." end
+        notify(msg)
+    end
+})
+
+local Settings = Window:AddTab("Settings")
+local SettingsBox = Settings:AddLeftGroupbox("combo_wick")
+
+SettingsBox:AddButton("Unload GUI", function()
+    roleESPEnabled = false
+    clearAllHighlights()
+    if distanceLabel then
+        distanceLabel.Parent.Parent:Destroy()
+    end
+    Library:Unload()
+end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+ThemeManager:SetFolder("combo_wick")
+SaveManager:SetFolder("combo_wick")
+SaveManager:BuildConfigSection(Settings)
+ThemeManager:ApplyToTab(Settings)
