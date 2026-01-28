@@ -1,255 +1,584 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local farmEnabled = false
+local activelyFarming = false
+local currentConnection = nil
+local currentTween = nil
+local clearedCoins = {}
+local isMoving = false
+local collisionConnections = {}
+local noclipActive = false
+local targetCoin = nil
+local swimming = false
+local oldgrav = workspace.Gravity
+local swimbeat = nil
+local gravReset = nil
+local targetCoinAmount = 40
+local coinBagMonitor = nil
+
+local function getCoinBagUI()
+    local gui = player:WaitForChild("PlayerGui")
+    local success, result = pcall(function()
+        return gui
+            :WaitForChild("MainGUI")
+            :WaitForChild("Game")
+            :WaitForChild("CoinBags")
+            :WaitForChild("Container")
+            :WaitForChild("Coin")
+    end)
+    if success then return result else return nil end
+end
+
+local function getCoinsObj()
+    local gui = player:WaitForChild("PlayerGui")
+    local success, result = pcall(function()
+        return gui
+            :WaitForChild("MainGUI")
+            :WaitForChild("Game")
+            :WaitForChild("CoinBags")
+            :WaitForChild("Container")
+            :WaitForChild("Coin")
+            :WaitForChild("CurrencyFrame")
+            :WaitForChild("Icon")
+            :WaitForChild("Coins")
+    end)
+    if success then return result else return nil end
+end
+
+local function getCoinAmount(obj)
+    local text = obj.Text or ""
+    local num = tonumber(text:match("%d+"))
+    if num then return num end
+    return 0
+end
+
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local Window = Library:CreateWindow({
+    Title = "COMBO_WICK",
+    Footer = "v1.0",
+    ShowCustomCursor = false,
+})
 
-local LocalPlayer = Players.LocalPlayer
-local rolesRemote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+local Tabs = {
+    Main = Window:AddTab("Main", "coins"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
 
-local currentRoles = {}
-local murdererPlayer, sheriffPlayer, heroPlayer
+local FarmGroupBox = Tabs.Main:AddLeftGroupbox("Coin Farmer", "target")
 
-local function notify(txt)
-    pcall(function()
-        Library:Notify({
-            Title = "combo_wick",
-            Description = txt,
-            Time = 4
-        })
-    end)
+local function enableSwim()
+    if not swimming and character and humanoid then
+        oldgrav = workspace.Gravity
+        workspace.Gravity = 0
+        
+        local swimDied = function()
+            workspace.Gravity = oldgrav
+            swimming = false
+        end
+        
+        gravReset = humanoid.Died:Connect(swimDied)
+        
+        local enums = Enum.HumanoidStateType:GetEnumItems()
+        table.remove(enums, table.find(enums, Enum.HumanoidStateType.None))
+        for i, v in pairs(enums) do
+            humanoid:SetStateEnabled(v, false)
+        end
+        humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+        
+        swimbeat = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                rootPart.Velocity = ((humanoid.MoveDirection ~= Vector3.new() or UserInputService:IsKeyDown(Enum.KeyCode.Space)) and rootPart.Velocity or Vector3.new())
+            end)
+        end)
+        
+        swimming = true
+    end
 end
 
-local function getAliveRoles()
-    if not rolesRemote or not rolesRemote.InvokeServer then return end
-    local ok, result = pcall(function()
-        return rolesRemote:InvokeServer()
+local function disableSwim()
+    if character and humanoid then
+        workspace.Gravity = oldgrav
+        swimming = false
+        
+        if gravReset then
+            gravReset:Disconnect()
+            gravReset = nil
+        end
+        
+        if swimbeat then
+            swimbeat:Disconnect()
+            swimbeat = nil
+        end
+        
+        local enums = Enum.HumanoidStateType:GetEnumItems()
+        table.remove(enums, table.find(enums, Enum.HumanoidStateType.None))
+        for i, v in pairs(enums) do
+            humanoid:SetStateEnabled(v, true)
+        end
+    end
+end
+
+local function getCoinServers()
+    local servers = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Coin_Server" and obj:IsA("BasePart") then
+            table.insert(servers, obj)
+        end
+    end
+    return servers
+end
+
+local function disconnectWatcher()
+    if currentConnection then
+        currentConnection:Disconnect()
+        currentConnection = nil
+    end
+end
+
+local function cancelTween()
+    if currentTween then
+        currentTween:Cancel()
+        currentTween = nil
+    end
+end
+
+local function enableNoclip()
+    if noclipActive then return end
+    noclipActive = true
+    
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+    
+    local conn = RunService.Heartbeat:Connect(function()
+        if not noclipActive then return end
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
     end)
-    if not ok or type(result) ~= "table" then return end
-    currentRoles = result
-    murdererPlayer, sheriffPlayer, heroPlayer = nil, nil, nil
-    for name, data in pairs(result) do
-        local plr = Players:FindFirstChild(name)
-        if plr and data and not data.Killed and not data.Dead then
-            if data.Role == "Murderer" then
-                murdererPlayer = plr
-            elseif data.Role == "Sheriff" then
-                sheriffPlayer = plr
-            elseif data.Role == "Hero" then
-                heroPlayer = plr
+    table.insert(collisionConnections, conn)
+end
+
+local function disableNoclip()
+    noclipActive = false
+    
+    for _, conn in pairs(collisionConnections) do
+        conn:Disconnect()
+    end
+    collisionConnections = {}
+    
+    task.wait(0.1)
+    
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = true
+        end
+    end
+end
+
+local function hasFireOrTouchInterest(coinServer)
+    if not coinServer or not coinServer.Parent then
+        return false
+    end
+    for _, d in ipairs(coinServer:GetDescendants()) do
+        if d:IsA("TouchTransmitter") or (d.Name and d.Name:lower():find("fire")) then
+            return true
+        end
+    end
+    return false
+end
+
+local function getNearestCoinServer()
+    local servers = getCoinServers()
+    if #servers == 0 then return nil, 0 end
+
+    local nearest = nil
+    local shortestDist = math.huge
+    local pos = rootPart.Position
+
+    for _, server in ipairs(servers) do
+        if not clearedCoins[server] and hasFireOrTouchInterest(server) then
+            local dist = (server.Position - pos).Magnitude
+            if dist < shortestDist then
+                shortestDist = dist
+                nearest = server
             end
         end
     end
+
+    return nearest, shortestDist
 end
 
-local function getRoleForPlayer(plr)
-    if not currentRoles then return "Innocent" end
-    local data = currentRoles[plr.Name]
-    if not data then return "Innocent" end
-    return data.Role or "Innocent"
-end
-
-local roleESPEnabled = false
-
-local roleColors = {
-    Murderer = Color3.fromRGB(255, 0, 0),
-    Sheriff  = Color3.fromRGB(0, 0, 255),
-    Hero     = Color3.fromRGB(0, 255, 0),
-    Innocent = Color3.fromRGB(255, 255, 255)
-}
-
-local function ensureHighlight(instance)
-    if not instance then return end
-    local hl = instance:FindFirstChildOfClass("Highlight")
-    if not hl then
-        hl = Instance.new("Highlight")
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.OutlineTransparency = 0.3
-        hl.Parent = instance
-    end
-    return hl
-end
-
-local function clearAllHighlights()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr.Character then
-            local hl = plr.Character:FindFirstChildOfClass("Highlight")
-            if hl then hl:Destroy() end
-        end
-    end
-end
-
-local function getDistance(plr)
-    if not plr or plr == LocalPlayer then return nil end
-    local char = LocalPlayer.Character
-    local targetChar = plr.Character
-    if not char or not targetChar then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
-    if not hrp or not targetHrp then return nil end
-    return math.floor((hrp.Position - targetHrp.Position).Magnitude)
-end
-
-local function updatePlayerHighlights()
-    if not roleESPEnabled then
-        clearAllHighlights()
-        return
-    end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            local hl = ensureHighlight(plr.Character)
-            local role = getRoleForPlayer(plr)
-            hl.FillColor = roleColors[role] or roleColors.Innocent
-            hl.FillTransparency = 0.6
-            hl.OutlineTransparency = 0.1
-            hl.Enabled = true
-        end
-    end
-end
-
-RunService.RenderStepped:Connect(function()
-    if roleESPEnabled then
-        getAliveRoles()
-        updatePlayerHighlights()
-    end
-end)
-
-local distanceLabel
-
-local function createDistanceLabel()
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "DistanceDisplay"
-    ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = game:GetService("CoreGui")
-    
-    local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(0, 250, 0, 80)
-    Frame.Position = UDim2.new(0, 10, 0.5, -40)
-    Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    Frame.BackgroundTransparency = 0.3
-    Frame.BorderSizePixel = 0
-    Frame.Parent = ScreenGui
-    
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 8)
-    UICorner.Parent = Frame
-    
-    local TextLabel = Instance.new("TextLabel")
-    TextLabel.Size = UDim2.new(1, -20, 1, -20)
-    TextLabel.Position = UDim2.new(0, 10, 0, 10)
-    TextLabel.BackgroundTransparency = 1
-    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    TextLabel.TextSize = 16
-    TextLabel.Font = Enum.Font.GothamBold
-    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-    TextLabel.TextYAlignment = Enum.TextYAlignment.Top
-    TextLabel.Text = ""
-    TextLabel.Parent = Frame
-    
-    return TextLabel
-end
-
-local function updateDistanceDisplay()
-    if not distanceLabel then
-        distanceLabel = createDistanceLabel()
-    end
-    
-    if not roleESPEnabled then
-        distanceLabel.Text = ""
+local function tweenTo(part)
+    if not part or not part.Parent then
         return
     end
     
-    getAliveRoles()
-    
-    local myRole = getRoleForPlayer(LocalPlayer)
-    local lines = {}
-    
-    -- Only show murderer distance if you're NOT the murderer
-    if murdererPlayer and myRole ~= "Murderer" then
-        local dist = getDistance(murdererPlayer)
-        if dist then
-            table.insert(lines, "🔴 Murderer: " .. dist .. " studs")
-        end
+    cancelTween()
+    isMoving = true
+
+    if humanoid.SeatPart then
+        humanoid.Sit = false
+        task.wait(0.1)
     end
+
+    enableNoclip()
+    enableSwim()
+
+    local targetCFrame = part.CFrame * CFrame.new(0, 3, 0)
+    local distance = (targetCFrame.Position - rootPart.Position).Magnitude
+    local tweenTime = math.max(0.8, math.min(2, distance / 30))
+
+    local goal = { CFrame = targetCFrame }
+    local info = TweenInfo.new(
+        tweenTime,
+        Enum.EasingStyle.Sine,
+        Enum.EasingDirection.InOut
+    )
+
+    currentTween = TweenService:Create(rootPart, info, goal)
     
-    -- Only show sheriff distance if you're NOT the sheriff
-    if sheriffPlayer and myRole ~= "Sheriff" then
-        local dist = getDistance(sheriffPlayer)
-        if dist then
-            table.insert(lines, "🔵 Sheriff: " .. dist .. " studs")
+    currentTween.Completed:Connect(function(playbackState)
+        if playbackState == Enum.PlaybackState.Completed then
+            isMoving = false
+            task.wait(0.2)
+            disableNoclip()
+            disableSwim()
         end
-    end
+    end)
     
-    distanceLabel.Text = table.concat(lines, "\n")
+    currentTween:Play()
 end
 
-RunService.Heartbeat:Connect(function()
-    if roleESPEnabled then
-        updateDistanceDisplay()
+local function monitorTargetCoin()
+    task.spawn(function()
+        while targetCoin and activelyFarming do
+            task.wait(0.05)
+            
+            if not targetCoin or not targetCoin.Parent then
+                cancelTween()
+                disableNoclip()
+                disableSwim()
+                isMoving = false
+                clearedCoins[targetCoin] = true
+                disconnectWatcher()
+                
+                if activelyFarming then
+                    teleportToNextCoin()
+                end
+                break
+            end
+            
+            if not hasFireOrTouchInterest(targetCoin) then
+                cancelTween()
+                disableNoclip()
+                disableSwim()
+                isMoving = false
+                clearedCoins[targetCoin] = true
+                disconnectWatcher()
+                
+                if activelyFarming then
+                    teleportToNextCoin()
+                end
+                break
+            end
+        end
+    end)
+end
+
+local function watchCoinServer(coinServer)
+    if not coinServer or not coinServer.Parent then
+        return
+    end
+    
+    disconnectWatcher()
+    
+    local collected = false
+    
+    currentConnection = coinServer.DescendantRemoving:Connect(function(desc)
+        if collected then return end
+        if not desc or not desc.Name then return end
+        
+        local name = desc.Name:lower()
+        if name:find("fire") or name:find("touch") then
+            collected = true
+            clearedCoins[coinServer] = true
+            disconnectWatcher()
+
+            if activelyFarming then
+                task.wait(0.2)
+                teleportToNextCoin()
+            end
+        end
+    end)
+    
+    task.delay(2, function()
+        if not collected and coinServer and coinServer.Parent then
+            if not hasFireOrTouchInterest(coinServer) then
+                collected = true
+                clearedCoins[coinServer] = true
+                disconnectWatcher()
+                
+                if activelyFarming then
+                    task.wait(0.2)
+                    teleportToNextCoin()
+                end
+            end
+        end
+    end)
+    
+    task.delay(3, function()
+        if not collected then
+            if not coinServer or not coinServer.Parent then
+                collected = true
+                clearedCoins[coinServer] = true
+                disconnectWatcher()
+                
+                if activelyFarming then
+                    task.wait(0.2)
+                    teleportToNextCoin()
+                end
+            end
+        end
+    end)
+    
+    task.delay(4, function()
+        if not collected and activelyFarming then
+            clearedCoins[coinServer] = true
+            disconnectWatcher()
+            
+            disableNoclip()
+            disableSwim()
+            teleportToNextCoin()
+        end
+    end)
+end
+
+function teleportToNextCoin()
+    if isMoving or not activelyFarming then
+        return
+    end
+    
+    local coinsObj = getCoinsObj()
+    if coinsObj then
+        local currentCoins = getCoinAmount(coinsObj)
+        if currentCoins >= targetCoinAmount then
+            activelyFarming = false
+            Library:Notify({
+                Title = "Target Reached",
+                Description = "Collected " .. currentCoins .. " coins - waiting for bag to hide/show",
+                Time = 5,
+            })
+            return
+        end
+    end
+    
+    local target, distance = getNearestCoinServer()
+    if not target then
+        if activelyFarming then
+            task.wait(2)
+            clearedCoins = {}
+            teleportToNextCoin()
+        end
+        return
+    end
+
+    targetCoin = target
+
+    tweenTo(target)
+    watchCoinServer(target)
+    monitorTargetCoin()
+end
+
+local function startFarming()
+    if activelyFarming then return end
+    
+    activelyFarming = true
+    clearedCoins = {}
+    
+    Library:Notify({
+        Title = "Farm Started",
+        Description = "Collecting coins",
+        Time = 2,
+    })
+    
+    teleportToNextCoin()
+end
+
+local function stopFarming()
+    if not activelyFarming then return end
+    
+    activelyFarming = false
+    disconnectWatcher()
+    cancelTween()
+    disableNoclip()
+    disableSwim()
+    isMoving = false
+    targetCoin = nil
+end
+
+local function startCoinBagMonitor()
+    if coinBagMonitor then
+        coinBagMonitor:Disconnect()
+    end
+    
+    local lastVisible = nil
+    
+    coinBagMonitor = RunService.Heartbeat:Connect(function()
+        if not farmEnabled then return end
+        
+        local coinBagUI = getCoinBagUI()
+        if not coinBagUI then return end
+        
+        local currentVisible = coinBagUI.Visible
+        
+        if lastVisible ~= nil and lastVisible ~= currentVisible then
+            if currentVisible then
+                if not activelyFarming then
+                    startFarming()
+                end
+            else
+                if activelyFarming then
+                    stopFarming()
+                    Library:Notify({
+                        Title = "Farm Paused",
+                        Description = "Coin bag hidden",
+                        Time = 2,
+                    })
+                end
+            end
+        end
+        
+        lastVisible = currentVisible
+    end)
+end
+
+local function stopCoinBagMonitor()
+    if coinBagMonitor then
+        coinBagMonitor:Disconnect()
+        coinBagMonitor = nil
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        local removedCoins = {}
+        for coin, _ in pairs(clearedCoins) do
+            if coin and coin.Parent then
+                if hasFireOrTouchInterest(coin) then
+                    table.insert(removedCoins, coin)
+                end
+            else
+                table.insert(removedCoins, coin)
+            end
+        end
+        
+        for _, coin in ipairs(removedCoins) do
+            clearedCoins[coin] = nil
+        end
     end
 end)
 
-local Window = Library:CreateWindow({
-    Title = "combo_wick",
-    Footer = "MM2 Role ESP",
-    Icon = 95816097006870,
-    Center = true,
-    AutoShow = true,
-    NotifySide = "Right",
-    Size = UDim2.new(0, 380, 0, 240)
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    rootPart = newChar:WaitForChild("HumanoidRootPart")
+    humanoid = newChar:WaitForChild("Humanoid")
+    
+    cancelTween()
+    disconnectWatcher()
+    disableNoclip()
+    disableSwim()
+    isMoving = false
+    targetCoin = nil
+    
+    if activelyFarming then
+        task.wait(1)
+        teleportToNextCoin()
+    end
+end)
+
+local coinValues = {}
+for i = 40, 100 do
+    table.insert(coinValues, tostring(i))
+end
+
+FarmGroupBox:AddDropdown("CoinTarget", {
+    Values = coinValues,
+    Default = "40",
+    Text = "Target Coins",
+    Tooltip = "Stop farming when this amount is reached",
+    Callback = function(Value)
+        targetCoinAmount = tonumber(Value)
+    end,
 })
 
-local Tab = Window:AddTab("Role ESP")
-local Main = Tab:AddLeftGroupbox("Main")
-
-Main:AddToggle("RoleESP", {
-    Text = "Role ESP",
+FarmGroupBox:AddToggle("AutoFarm", {
+    Text = "Auto Farm",
     Default = false,
-    Callback = function(val)
-        roleESPEnabled = val
-        if val then
-            getAliveRoles()
-            notify("Role ESP: ON")
+    Callback = function(Value)
+        farmEnabled = Value
+        
+        if farmEnabled then
+            startCoinBagMonitor()
+            
+            local coinBagUI = getCoinBagUI()
+            if coinBagUI and coinBagUI.Visible then
+                startFarming()
+            else
+                Library:Notify({
+                    Title = "Waiting",
+                    Description = "Coin bag hidden - will start when visible",
+                    Time = 3,
+                })
+            end
         else
-            notify("Role ESP: OFF")
+            stopCoinBagMonitor()
+            stopFarming()
         end
-        updatePlayerHighlights()
-    end
+    end,
 })
 
-Main:AddButton({
-    Text = "Detect Roles (notify)",
-    Func = function()
-        getAliveRoles()
-        local msg = ""
-        if murdererPlayer then msg ..= "Murderer: " .. murdererPlayer.Name .. "  " end
-        if sheriffPlayer then msg ..= "Sheriff: " .. sheriffPlayer.Name .. "  " end
-        if heroPlayer then msg ..= "Hero: " .. heroPlayer.Name .. "  " end
-        if msg == "" then msg = "No roles found yet." end
-        notify(msg)
-    end
-})
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu", "wrench")
 
-local Settings = Window:AddTab("Settings")
-local SettingsBox = Settings:AddLeftGroupbox("combo_wick")
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
 
-SettingsBox:AddButton("Unload GUI", function()
-    roleESPEnabled = false
-    clearAllHighlights()
-    if distanceLabel then
-        distanceLabel.Parent.Parent:Destroy()
-    end
+MenuGroup:AddButton("Unload", function()
     Library:Unload()
 end)
 
+Library.ToggleKeybind = Library.Options.MenuKeybind
+
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
+
 SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-ThemeManager:SetFolder("combo_wick")
-SaveManager:SetFolder("combo_wick")
-SaveManager:BuildConfigSection(Settings)
-ThemeManager:ApplyToTab(Settings)
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+ThemeManager:SetFolder("COMBO_WICK")
+SaveManager:SetFolder("COMBO_WICK")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+Library:OnUnload(function()
+    farmEnabled = false
+    stopCoinBagMonitor()
+    stopFarming()
+end)
