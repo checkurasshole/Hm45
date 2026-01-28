@@ -1,63 +1,37 @@
-local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
-local player = Players.LocalPlayer
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "VisibilityTracker"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = CoreGui
+local Options = Library.Options
+local Toggles = Library.Toggles
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 220, 0, 320)
-mainFrame.Position = UDim2.new(1, -230, 0, 10)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+local Window = Library:CreateWindow({
+    Title = "Visibility Tracker",
+    Footer = "v1.0",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = mainFrame
-
-local titleBar = Instance.new("TextLabel")
-titleBar.Size = UDim2.new(1, 0, 0, 28)
-titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-titleBar.BorderSizePixel = 0
-titleBar.Text = "Visibility Tracker"
-titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleBar.Font = Enum.Font.GothamBold
-titleBar.TextSize = 12
-titleBar.Parent = mainFrame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = titleBar
-
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -8, 1, -34)
-scrollFrame.Position = UDim2.new(0, 4, 0, 32)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 4
-scrollFrame.Parent = mainFrame
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 4)
-listLayout.Parent = scrollFrame
-
-local pathElements = {}
-local trackedObjects = {}
-local childMonitors = {}
-
-local numericProperties = {
-    "Transparency", "BackgroundTransparency", "TextTransparency",
-    "Rotation", "ZIndex", "LayoutOrder",
-    "TextSize", "LineHeight", "MaxVisibleGraphemes"
+local Tabs = {
+    Main = Window:AddTab("Tracker", "eye"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
 }
 
-local function isNumeric(value)
-    return type(value) == "number" or (type(value) == "string" and tonumber(value) ~= nil)
-end
+local player = game:GetService("Players").LocalPlayer
+local targetPaths = {
+    "EmptyBagIcon",
+    "CurrencyFrame",
+    "Full",
+    "FullBagIcon"
+}
+
+local basePath = player.PlayerGui.MainGUI.Lobby.Dock.CoinBags.Container.Coin
+local trackedObjects = {}
+local pathLabels = {}
+
+local MainGroup = Tabs.Main:AddLeftGroupbox("Monitored Paths", "folder")
 
 local function getFullPath(instance)
     local parts = {}
@@ -76,432 +50,188 @@ local function getFullPath(instance)
     return instance:GetFullName()
 end
 
-local function getChildData(child)
-    local data = {
-        instance = child,
-        path = getFullPath(child),
-        properties = {},
-        attributes = {}
-    }
-    
-    if child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
-        data.properties["Text"] = child.Text
-    end
-    
-    if child:IsA("GuiObject") then
-        data.properties["Visible"] = child.Visible
-        
-        for _, propName in ipairs(numericProperties) do
-            local success, value = pcall(function()
-                return child[propName]
-            end)
-            if success and type(value) == "number" then
-                data.properties[propName] = value
-            end
-        end
-    end
-    
-    if child:IsA("ImageLabel") or child:IsA("ImageButton") then
-        data.properties["Image"] = child.Image
-    end
-    
-    for attrName, attrValue in pairs(child:GetAttributes()) do
-        data.attributes[attrName] = tostring(attrValue)
-    end
-    
-    return data
-end
-
-local function getAllChildren(instance)
-    local children = {}
-    
-    for _, child in pairs(instance:GetChildren()) do
-        table.insert(children, getChildData(child))
-    end
-    
-    return children
-end
-
-local function updateChildDisplay(childFrame, childData, updates)
-    local updateText = ""
-    
-    for prop, value in pairs(updates.properties or {}) do
-        updateText = updateText .. prop .. ": " .. tostring(value) .. "\n"
-    end
-    
-    for attr, value in pairs(updates.attributes or {}) do
-        updateText = updateText .. "[" .. attr .. "]: " .. tostring(value) .. "\n"
-    end
-    
-    if updateText ~= "" then
-        local existingLabel = childFrame:FindFirstChild("UpdateLabel")
-        if existingLabel then
-            existingLabel.Text = updateText:sub(1, -2)
-        end
+local function formatValue(value)
+    if type(value) == "boolean" then
+        return tostring(value)
+    elseif type(value) == "string" then
+        return value
+    elseif type(value) == "number" then
+        return tostring(value)
+    elseif typeof(value) == "Color3" then
+        return string.format("RGB(%d, %d, %d)", value.R * 255, value.G * 255, value.B * 255)
+    else
+        return tostring(value)
     end
 end
 
-local function createChildEntry(parent, childData, parentPath)
-    local childFrame = Instance.new("Frame")
-    childFrame.Size = UDim2.new(1, -8, 0, 80)
-    childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    childFrame.BorderSizePixel = 0
-    childFrame.Parent = parent
+local function updatePathLabel(name, propertyName, value, isVisible)
+    local key = name .. "_" .. propertyName
     
-    local childCorner = Instance.new("UICorner")
-    childCorner.CornerRadius = UDim.new(0, 3)
-    childCorner.Parent = childFrame
+    if pathLabels[key] then
+        local statusText = isVisible and "[VISIBLE]" or "[HIDDEN]"
+        local valueText = propertyName .. ": " .. formatValue(value)
+        pathLabels[key]:SetText(statusText .. " " .. valueText)
+    end
+end
+
+local function monitorPath(name, instance)
+    if not instance then return end
     
-    local childLabel = Instance.new("TextLabel")
-    childLabel.Size = UDim2.new(1, -4, 0, 30)
-    childLabel.Position = UDim2.new(0, 2, 0, 2)
-    childLabel.BackgroundTransparency = 1
-    childLabel.Text = childData.path
-    childLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-    childLabel.Font = Enum.Font.Gotham
-    childLabel.TextSize = 8
-    childLabel.TextXAlignment = Enum.TextXAlignment.Left
-    childLabel.TextYAlignment = Enum.TextYAlignment.Top
-    childLabel.TextWrapped = true
-    childLabel.Parent = childFrame
+    local fullPath = getFullPath(instance)
     
-    local updateLabel = Instance.new("TextLabel")
-    updateLabel.Name = "UpdateLabel"
-    updateLabel.Size = UDim2.new(1, -4, 0, 25)
-    updateLabel.Position = UDim2.new(0, 2, 0, 32)
-    updateLabel.BackgroundTransparency = 1
-    updateLabel.Text = ""
-    updateLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-    updateLabel.Font = Enum.Font.GothamBold
-    updateLabel.TextSize = 7
-    updateLabel.TextXAlignment = Enum.TextXAlignment.Left
-    updateLabel.TextYAlignment = Enum.TextYAlignment.Top
-    updateLabel.TextWrapped = true
-    updateLabel.Parent = childFrame
+    MainGroup:AddLabel(name .. " Path", true, name .. "_PathLabel")
+    Options[name .. "_PathLabel"]:SetText(fullPath)
     
-    local copyBtn = Instance.new("TextButton")
-    copyBtn.Size = UDim2.new(1, -6, 0, 20)
-    copyBtn.Position = UDim2.new(0, 3, 1, -22)
-    copyBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 190)
-    copyBtn.BorderSizePixel = 0
-    copyBtn.Text = "Copy"
-    copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    copyBtn.Font = Enum.Font.GothamBold
-    copyBtn.TextSize = 9
-    copyBtn.Parent = childFrame
+    MainGroup:AddButton({
+        Text = "Copy " .. name .. " Path",
+        Func = function()
+            setclipboard(fullPath)
+            Library:Notify({
+                Title = "Copied!",
+                Description = "Path copied to clipboard",
+                Time = 2,
+            })
+        end,
+    })
     
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 3)
-    btnCorner.Parent = copyBtn
-    
-    copyBtn.MouseButton1Click:Connect(function()
-        setclipboard(childData.path)
-        copyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
-        copyBtn.Text = "Copied!"
-        task.wait(0.6)
-        copyBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 190)
-        copyBtn.Text = "Copy"
-    end)
-    
-    local monitorKey = parentPath .. "_" .. childData.path
-    childMonitors[monitorKey] = {
-        frame = childFrame,
-        data = childData
-    }
-    
-    local child = childData.instance
-    if child and child.Parent then
+    if instance:IsA("GuiObject") then
+        local visLabel = MainGroup:AddLabel(name .. " Visibility", true, name .. "_Visibility")
+        pathLabels[name .. "_Visible"] = visLabel
         
-        if child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
-            child:GetPropertyChangedSignal("Text"):Connect(function()
-                local newText = child.Text
-                if newText ~= childData.properties["Text"] then
-                    childData.properties["Text"] = newText
-                    local updates = {Text = newText}
-                    if isNumeric(newText) then
-                        updates.Text = updates.Text .. " (NUMBER)"
-                    end
-                    updateChildDisplay(childFrame, childData, {properties = updates})
-                    childFrame.BackgroundColor3 = Color3.fromRGB(70, 100, 70)
-                    task.wait(1)
-                    childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-                end
-            end)
-        end
+        local initialVis = instance.Visible
+        updatePathLabel(name, "Visible", initialVis, initialVis)
         
-        if child:IsA("GuiObject") then
-            child:GetPropertyChangedSignal("Visible"):Connect(function()
-                if child.Visible ~= childData.properties["Visible"] then
-                    childData.properties["Visible"] = child.Visible
-                    updateChildDisplay(childFrame, childData, {properties = {Visible = child.Visible}})
-                    childFrame.BackgroundColor3 = Color3.fromRGB(70, 100, 70)
-                    task.wait(1)
-                    childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-                end
-            end)
+        instance:GetPropertyChangedSignal("Visible"):Connect(function()
+            updatePathLabel(name, "Visible", instance.Visible, instance.Visible)
             
-            for _, propName in ipairs(numericProperties) do
-                local success = pcall(function()
-                    child:GetPropertyChangedSignal(propName):Connect(function()
-                        local newValue = child[propName]
-                        if type(newValue) == "number" and newValue ~= childData.properties[propName] then
-                            childData.properties[propName] = newValue
-                            updateChildDisplay(childFrame, childData, {properties = {[propName] = newValue}})
-                            childFrame.BackgroundColor3 = Color3.fromRGB(100, 70, 100)
-                            task.wait(1)
-                            childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-                        end
-                    end)
-                end)
-            end
-        end
-        
-        if child:IsA("ImageLabel") or child:IsA("ImageButton") then
-            child:GetPropertyChangedSignal("Image"):Connect(function()
-                if child.Image ~= childData.properties["Image"] then
-                    childData.properties["Image"] = child.Image
-                    updateChildDisplay(childFrame, childData, {properties = {Image = child.Image}})
-                    childFrame.BackgroundColor3 = Color3.fromRGB(70, 100, 70)
-                    task.wait(1)
-                    childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-                end
-            end)
-        end
-        
-        child.AttributeChanged:Connect(function(attrName)
-            local attrValue = child:GetAttribute(attrName)
-            local strValue = tostring(attrValue)
-            if strValue ~= childData.attributes[attrName] then
-                childData.attributes[attrName] = strValue
-                local displayValue = strValue
-                if isNumeric(attrValue) then
-                    displayValue = displayValue .. " (NUMBER)"
-                end
-                updateChildDisplay(childFrame, childData, {attributes = {[attrName] = displayValue}})
-                childFrame.BackgroundColor3 = Color3.fromRGB(100, 70, 100)
-                task.wait(1)
-                childFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-            end
+            local status = instance.Visible and "VISIBLE" or "HIDDEN"
+            Library:Notify({
+                Title = name,
+                Description = "Status: " .. status,
+                Time = 3,
+            })
         end)
     end
     
-    return childFrame
-end
-
-local function addPathToGui(path, instance)
-    if pathElements[path] then return end
-    
-    local children = getAllChildren(instance)
-    
-    local pathFrame = Instance.new("Frame")
-    pathFrame.Size = UDim2.new(1, -4, 0, 90)
-    pathFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    pathFrame.BorderSizePixel = 0
-    pathFrame.Parent = scrollFrame
-    
-    local frameCorner = Instance.new("UICorner")
-    frameCorner.CornerRadius = UDim.new(0, 5)
-    frameCorner.Parent = pathFrame
-    
-    local pathLabel = Instance.new("TextLabel")
-    pathLabel.Size = UDim2.new(1, -4, 0, 35)
-    pathLabel.Position = UDim2.new(0, 2, 0, 2)
-    pathLabel.BackgroundTransparency = 1
-    pathLabel.Text = path
-    pathLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-    pathLabel.Font = Enum.Font.GothamBold
-    pathLabel.TextSize = 9
-    pathLabel.TextXAlignment = Enum.TextXAlignment.Left
-    pathLabel.TextYAlignment = Enum.TextYAlignment.Top
-    pathLabel.TextWrapped = true
-    pathLabel.Parent = pathFrame
-    
-    local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(1, -8, 0, 22)
-    buttonContainer.Position = UDim2.new(0, 4, 0, 38)
-    buttonContainer.BackgroundTransparency = 1
-    buttonContainer.Parent = pathFrame
-    
-    local copyButton = Instance.new("TextButton")
-    copyButton.Size = UDim2.new(0.48, 0, 1, 0)
-    copyButton.Position = UDim2.new(0, 0, 0, 0)
-    copyButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
-    copyButton.BorderSizePixel = 0
-    copyButton.Text = "Copy"
-    copyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    copyButton.Font = Enum.Font.GothamBold
-    copyButton.TextSize = 10
-    copyButton.Parent = buttonContainer
-    
-    local copyCorner = Instance.new("UICorner")
-    copyCorner.CornerRadius = UDim.new(0, 4)
-    copyCorner.Parent = copyButton
-    
-    local expandButton = Instance.new("TextButton")
-    expandButton.Size = UDim2.new(0.48, 0, 1, 0)
-    expandButton.Position = UDim2.new(0.52, 0, 0, 0)
-    expandButton.BackgroundColor3 = Color3.fromRGB(180, 100, 60)
-    expandButton.BorderSizePixel = 0
-    expandButton.Text = "Children (" .. #children .. ")"
-    expandButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    expandButton.Font = Enum.Font.GothamBold
-    expandButton.TextSize = 10
-    expandButton.Parent = buttonContainer
-    
-    local expandCorner = Instance.new("UICorner")
-    expandCorner.CornerRadius = UDim.new(0, 4)
-    expandCorner.Parent = expandButton
-    
-    local childrenContainer = Instance.new("Frame")
-    childrenContainer.Size = UDim2.new(1, -8, 0, 0)
-    childrenContainer.Position = UDim2.new(0, 4, 0, 65)
-    childrenContainer.BackgroundTransparency = 1
-    childrenContainer.Visible = false
-    childrenContainer.Parent = pathFrame
-    
-    local childLayout = Instance.new("UIListLayout")
-    childLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    childLayout.Padding = UDim.new(0, 3)
-    childLayout.Parent = childrenContainer
-    
-    local copyAllButton = Instance.new("TextButton")
-    copyAllButton.Size = UDim2.new(1, 0, 0, 24)
-    copyAllButton.BackgroundColor3 = Color3.fromRGB(100, 180, 100)
-    copyAllButton.BorderSizePixel = 0
-    copyAllButton.Text = "Copy All Children Paths"
-    copyAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    copyAllButton.Font = Enum.Font.GothamBold
-    copyAllButton.TextSize = 10
-    copyAllButton.Visible = false
-    copyAllButton.Parent = childrenContainer
-    
-    local copyAllCorner = Instance.new("UICorner")
-    copyAllCorner.CornerRadius = UDim.new(0, 4)
-    copyAllCorner.Parent = copyAllButton
-    
-    for _, childData in ipairs(children) do
-        createChildEntry(childrenContainer, childData, path)
+    if instance:IsA("TextLabel") or instance:IsA("TextBox") or instance:IsA("TextButton") then
+        local textLabel = MainGroup:AddLabel(name .. " Text", true, name .. "_Text")
+        pathLabels[name .. "_Text"] = textLabel
+        updatePathLabel(name, "Text", instance.Text, instance.Visible)
+        
+        instance:GetPropertyChangedSignal("Text"):Connect(function()
+            updatePathLabel(name, "Text", instance.Text, instance.Visible)
+            
+            Library:Notify({
+                Title = name .. " - Text Changed",
+                Description = "New: " .. instance.Text,
+                Time = 3,
+            })
+        end)
     end
     
-    local expanded = false
-    
-    expandButton.MouseButton1Click:Connect(function()
-        expanded = not expanded
-        childrenContainer.Visible = expanded
-        copyAllButton.Visible = expanded
+    if instance:IsA("ImageLabel") or instance:IsA("ImageButton") then
+        local imageLabel = MainGroup:AddLabel(name .. " Image", true, name .. "_Image")
+        pathLabels[name .. "_Image"] = imageLabel
+        updatePathLabel(name, "Image", instance.Image, instance.Visible)
         
-        if expanded then
-            local contentHeight = childLayout.AbsoluteContentSize.Y + 6
-            childrenContainer.Size = UDim2.new(1, -8, 0, contentHeight)
-            pathFrame.Size = UDim2.new(1, -4, 0, 90 + contentHeight)
-            expandButton.BackgroundColor3 = Color3.fromRGB(220, 120, 70)
-        else
-            childrenContainer.Size = UDim2.new(1, -8, 0, 0)
-            pathFrame.Size = UDim2.new(1, -4, 0, 90)
-            expandButton.BackgroundColor3 = Color3.fromRGB(180, 100, 60)
-        end
+        instance:GetPropertyChangedSignal("Image"):Connect(function()
+            updatePathLabel(name, "Image", instance.Image, instance.Visible)
+            
+            Library:Notify({
+                Title = name .. " - Image Changed",
+                Description = "Image updated",
+                Time = 3,
+            })
+        end)
+    end
+    
+    for attrName, attrValue in pairs(instance:GetAttributes()) do
+        local attrLabel = MainGroup:AddLabel(name .. " [" .. attrName .. "]", true, name .. "_" .. attrName)
+        pathLabels[name .. "_" .. attrName] = attrLabel
+        updatePathLabel(name, attrName, attrValue, instance.Visible)
         
-        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
-    end)
+        instance:GetAttributeChangedSignal(attrName):Connect(function()
+            local newValue = instance:GetAttribute(attrName)
+            updatePathLabel(name, attrName, newValue, instance.Visible)
+            
+            Library:Notify({
+                Title = name .. " - Attribute Changed",
+                Description = attrName .. ": " .. formatValue(newValue),
+                Time = 3,
+            })
+        end)
+    end
     
-    copyButton.MouseButton1Click:Connect(function()
-        setclipboard(path)
-        copyButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
-        copyButton.Text = "Copied!"
-        task.wait(0.8)
-        copyButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
-        copyButton.Text = "Copy"
-    end)
-    
-    copyAllButton.MouseButton1Click:Connect(function()
-        local allPaths = {}
-        for _, childData in ipairs(children) do
-            table.insert(allPaths, childData.path)
-        end
-        setclipboard(table.concat(allPaths, "\n"))
-        copyAllButton.BackgroundColor3 = Color3.fromRGB(70, 220, 70)
-        copyAllButton.Text = "All Copied!"
-        task.wait(0.8)
-        copyAllButton.BackgroundColor3 = Color3.fromRGB(100, 180, 100)
-        copyAllButton.Text = "Copy All Children Paths"
-    end)
-    
-    pathElements[path] = pathFrame
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
+    MainGroup:AddDivider()
 end
 
-local function isGuiObject(instance)
-    return instance:IsA("GuiObject")
-end
-
-local function monitorVisibility(instance)
-    if not isGuiObject(instance) then return end
-    
-    local path = getFullPath(instance)
-    if trackedObjects[path] then return end
-    
-    trackedObjects[path] = {
-        instance = instance,
-        wasVisible = instance.Visible
-    }
-    
-    instance:GetPropertyChangedSignal("Visible"):Connect(function()
-        if not instance or not instance.Parent then
-            trackedObjects[path] = nil
-            return
-        end
-        
-        local data = trackedObjects[path]
-        if not data then return end
-        
-        if not data.wasVisible and instance.Visible then
-            addPathToGui(path, instance)
-        end
-        
-        data.wasVisible = instance.Visible
-    end)
-end
-
-local function scanInstance(instance)
-    monitorVisibility(instance)
-    
-    for _, child in pairs(instance:GetChildren()) do
-        scanInstance(child)
+for _, pathName in ipairs(targetPaths) do
+    local instance = basePath:FindFirstChild(pathName)
+    if instance then
+        monitorPath(pathName, instance)
+    else
+        MainGroup:AddLabel(pathName .. " - NOT FOUND", true)
+        MainGroup:AddDivider()
     end
 end
 
-scanInstance(game)
+local InfoGroup = Tabs.Main:AddRightGroupbox("Information", "info")
+InfoGroup:AddLabel("Monitoring 4 specific paths", true)
+InfoGroup:AddLabel("Updates show in real-time", true)
+InfoGroup:AddLabel("Notifications on changes", true)
 
-game.DescendantAdded:Connect(function(descendant)
-    task.wait()
-    monitorVisibility(descendant)
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu", "wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen", {
+    Default = Library.KeybindFrame.Visible,
+    Text = "Open Keybind Menu",
+    Callback = function(value)
+        Library.KeybindFrame.Visible = value
+    end,
+})
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+    Text = "Custom Cursor",
+    Default = true,
+    Callback = function(Value)
+        Library.ShowCustomCursor = Value
+    end,
+})
+
+MenuGroup:AddDropdown("NotificationSide", {
+    Values = { "Left", "Right" },
+    Default = "Right",
+    Text = "Notification Side",
+    Callback = function(Value)
+        Library:SetNotifySide(Value)
+    end,
+})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { 
+    Default = "RightShift", 
+    NoUI = true, 
+    Text = "Menu keybind" 
+})
+
+MenuGroup:AddButton("Unload", function()
+    Library:Unload()
 end)
 
-local dragging = false
-local dragInput, dragStart, startPos
+Library.ToggleKeybind = Options.MenuKeybind
 
-mainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-    end
-end)
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
 
-mainFrame.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
+ThemeManager:SetFolder("VisibilityTracker")
+SaveManager:SetFolder("VisibilityTracker/configs")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+
+Library:OnUnload(function()
+    print("Visibility Tracker Unloaded")
 end)
